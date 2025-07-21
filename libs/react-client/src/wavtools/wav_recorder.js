@@ -30,6 +30,8 @@ export class WavRecorder {
     this.scriptSrc = AudioProcessorSrc;
     // Config
     this.sampleRate = sampleRate;
+    // Will be updated when begin() is called
+    this.actualSampleRate = sampleRate;
     this.outputToSpeakers = outputToSpeakers;
     this.debug = !!debug;
     this._deviceChangeCallback = null;
@@ -321,7 +323,27 @@ export class WavRecorder {
       throw new Error('Could not start media stream');
     }
 
-    const context = new AudioContext({ sampleRate: this.sampleRate });
+    // Get the actual sample rate from the audio track if possible
+    let actualSampleRate = this.sampleRate;
+    try {
+      const audioTrack = this.stream.getAudioTracks()[0];
+      if (audioTrack && typeof audioTrack.getSettings === 'function') {
+        const settings = audioTrack.getSettings();
+        if (settings && settings.sampleRate) {
+          actualSampleRate = settings.sampleRate;
+          if (this.debug) {
+            console.log(
+              `Using native sample rate: ${actualSampleRate}Hz (configured: ${this.sampleRate}Hz)`
+            );
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Could not determine audio track's native sample rate:", e);
+    }
+
+    // Create AudioContext with the actual stream sample rate to avoid Firefox errors
+    const context = new AudioContext({ sampleRate: actualSampleRate });
     const source = context.createMediaStreamSource(this.stream);
     // Load and execute the module script.
     try {
@@ -377,6 +399,8 @@ export class WavRecorder {
     this.node = node;
     this.analyser = analyser;
     this.processor = processor;
+    // Store actual sample rate for reference in other methods
+    this.actualSampleRate = actualSampleRate;
     return true;
   }
 
